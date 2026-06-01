@@ -169,46 +169,74 @@ the phone's location.
 
 ## Make it work for your situation
 
-Everything below is hardcoded to my setup. Here's exactly what you'd change to run it
-yourself. (The connector code, `app.py`, currently lives on the server — see
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md). Nothing here contains secrets; those
-all live in the server's `.env`.)
+I built this around my own phone setup, so a handful of things are wired specifically to
+me — my domain, my phone numbers, my Apple account, my business details. None of it is
+hard to change, but you'll be touching a few different places (this app, a small server,
+your Twilio account, and Apple's developer portal). Here's the whole thing, roughly in the
+order I'd do it, with the *why* behind each step so it's not just a checklist.
 
-**1. The iOS app (this repo).** Edit `project.yml`, then run `xcodegen generate`:
-- `PRODUCT_BUNDLE_IDENTIFIER` → your own reverse-domain id (e.g. `com.yourco.yourapp`)
-- `DEVELOPMENT_TEAM` → your Apple Developer **Team ID**
-- `INFOPLIST_KEY_CFBundleDisplayName` → your app's name (optional)
-- `aps-environment` → `production` for TestFlight/App Store builds, `development` for Xcode-Run testing
-- Default server URL + username: `Sources/Core.swift` (`AppSettings`) — or just type them on first launch
-- App icon: replace `Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png` (optional)
+**Before you start, decide how far you want to go.** There are really two halves here. The
+**texting half** (the app + a small server + Twilio, optionally with push notifications) is
+the core, and it's not too bad to stand up. The **voice half** (FreePBX + a physical desk
+phone + a VPN) is completely optional — skip it entirely if you just want texting. I've
+marked the voice-only bits clearly at the end.
 
-**2. The server connector** (`app.py` + `.env`, on your server):
-- The `NUMBERS` map near the top of `app.py` → your number(s) and the label for each
-- Every value in `.env`: `PUBLIC_BASE` (your domain), `INBOX_USER`/`INBOX_PASS` (the app login),
-  `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`, the `AMI_*` values (only if using the desk-phone popup),
-  `YEALINK_EXT`, `NTFY_TOPIC`, and all `APNS_*` (#6)
+**1. Get a server with a domain name.** The app and Twilio both need to reach your server
+over plain HTTPS — Twilio has to POST your incoming texts to a public URL, and Apple's push
+service won't talk to anything that isn't HTTPS. Any cheap cloud VPS does the job. Point a
+domain (or a subdomain) at it and grab a free Let's Encrypt certificate. Wherever you see
+`pbx.bulwarkblack.com` in the config, that becomes your domain — it's the address your app
+talks to and the address Twilio delivers your texts to.
 
-**3. Twilio.** Your own account + at least one number ($1.15/mo). For each number, set the
-**Messaging webhook (`SmsUrl`)** to `https://<your-domain>/sms-hook`. Outbound also needs
-A2P (#5); voice needs a SIP trunk + FreePBX (#7).
+**2. Set up Twilio.** Create an account and buy a number (search by area code — they're
+about $1.15/month). Two things to wire up: point the number's **Messaging webhook** at
+`https://your-domain/sms-hook` (that's the pipe your incoming texts flow through), and copy
+your **Account SID + Auth Token** into the server config so the connector can send texts on
+your behalf. That's it for receiving; sending also needs the A2P step (#5).
 
-**4. Domain + TLS.** Point a domain at your server, get a Let's Encrypt cert, and replace
-`pbx.bulwarkblack.com` in the nginx config with your domain.
+**3. Run the connector.** This is the small Python service that's the actual brain — it
+catches incoming texts, stores them, serves the app's data, and sends your outgoing texts.
+Two things in it are personal to me: the **`NUMBERS` list** near the top of `app.py` (swap
+in your own number(s) and whatever friendly label you want to see for each), and the
+**`.env` file** — that's where your domain, the username/password you'll log into the app
+with, your Twilio keys, and the Apple-push settings from step 6 all go. Nothing secret is
+ever committed to the repo; you fill in your own `.env` on the server. *(Note: the connector
+code itself currently lives on the server, not in this repo — see
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) for its layout.)*
 
-**5. Legal / A2P compliance** (`legal/`). Edit `privacy.html`, `terms.html`, `optin.html`
-with **your** business name, contact email, and number(s); host them publicly (served at
-`/legal/`); and reference those URLs when you register your **A2P 10DLC brand + campaign**.
-Without an approved campaign you can receive but not send.
+**4. Make the app yours.** Open `project.yml` and change two things: the **bundle
+identifier** to something unique to you (like `com.yourname.yourapp`), and the **Development
+Team** to your Apple Team ID so Xcode can sign it. Then run `xcodegen generate`. If you
+want, rename the app and drop in your own icon too. The nice part: the app doesn't hardcode
+your phone numbers — it pulls them from your server — so once it points at your domain and
+you log in with the username/password you set in step 3, everything just shows up.
 
-**6. Apple push (APNs).** Requires the $99/yr Apple Developer account. Create an APNs auth
-key (`.p8`); set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID` (= your app's bundle id),
-put the `.p8` on the server (`APNS_KEY_P8`), and set `APNS_HOST` to match your build
-(`api.push.apple.com` for production / TestFlight, `api.sandbox.push.apple.com` for Xcode-Run).
+**5. Register A2P so you can actually send (US numbers).** This one surprises people. US
+carriers won't let a regular 10-digit number send texts until you register an **A2P 10DLC
+"brand" and "campaign"** — basically telling the carriers who you are and what kind of
+messages you'll send. Part of that is publishing a privacy policy, SMS terms, and an opt-in
+page; mine are in the `legal/` folder, so just swap in your business name, email, and
+number(s) and host them. Until your campaign is approved you can **receive** texts fine, but
+**outgoing** ones get silently blocked by the carriers — so start this early, because
+approval can take a few days.
 
-**7. (Optional) Phone calls + desk phone** — only if you want voice, not just texts:
-- FreePBX: create extensions, inbound routes (number → extension), and outbound routes (caller ID per line)
-- A SIP phone registered to those extensions (I use a Yealink T54W with two lines)
-- An OpenVPN tunnel if the phone is remote (keeps SIP off the public internet)
+**6. Turn on push notifications (optional, but it's the magic).** This is the fiddly part,
+and it needs the paid ($99/year) Apple Developer account. In Apple's developer portal you
+create a push **key** (a `.p8` file), note its **Key ID** and your **Team ID**, and drop
+those plus the `.p8` onto your server. The one thing that *will* trip you up: the push
+**environment has to match how you install the app**. A build you run straight from Xcode
+uses Apple's **sandbox**; a build you ship through **TestFlight** or the App Store uses
+**production**. Mismatch them and you get cryptic `BadDeviceToken` errors. (Ask me how I
+know — see Flow 4 above.)
+
+**7. (Optional) The phone-call side.** Only bother with this if you want real phone calls
+and a physical desk phone, not just texting — the texting app needs none of it. This is
+where **FreePBX** comes in: it's the PBX that routes calls between Twilio and a SIP phone (I
+use a **Yealink T54W**). You'd set up a Twilio **SIP trunk**, create **extensions** and
+call-routing rules in FreePBX (which number rings which phone, and which caller ID goes out
+on each line), and register your phone to those extensions. If the phone isn't sitting on
+the same network as the server, put them both on a **VPN** so you're not exposing phone
+signaling to the open internet. It's easily the most involved part of the whole project.
 
 ## Infrastructure
 
