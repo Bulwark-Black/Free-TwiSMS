@@ -4,6 +4,21 @@ A native SwiftUI iPhone app for reading and sending texts (and MMS/files) throug
 Twilio number, backed by a lightweight self-hosted connector. Built as a personal
 client for the Bulwark Black phone system.
 
+> **A note from the author**
+>
+> Just to let you know, I built this specific to my situation, but the layout and code is
+> here. If you want to use it you will have to create a Twilio account and buy a phone
+> number ($1.15 a month, cheap), and host a server (cloud or otherwise). Install FreePBX on
+> it and configure it if you also want phone calls and a desk phone. I use a Yealink T54W as
+> my VoIP phone. It has two numbers on it. I also have an Apple Developer account ($99 a
+> year), which allows me to use native Apple push notifications through production keys.
+> Lastly, I set up legal compliance for the A2P campaign — this is what allows you to send
+> out SMS and MMS messages over the VoIP numbers you have on Twilio. Without it you can not
+> send out, only receive.
+>
+> See **[Make it work for your situation](#make-it-work-for-your-situation)** below for the
+> exact list of things to change.
+
 ## What it does
 
 - Phone-style messaging UI: conversation list, chat threads, number switcher
@@ -151,6 +166,49 @@ the phone's location.
 - Set your signing team in Xcode (Signing & Capabilities). Push Notifications
   capability is already declared.
 - On first launch, enter your server URL + login.
+
+## Make it work for your situation
+
+Everything below is hardcoded to my setup. Here's exactly what you'd change to run it
+yourself. (The connector code, `app.py`, currently lives on the server — see
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md). Nothing here contains secrets; those
+all live in the server's `.env`.)
+
+**1. The iOS app (this repo).** Edit `project.yml`, then run `xcodegen generate`:
+- `PRODUCT_BUNDLE_IDENTIFIER` → your own reverse-domain id (e.g. `com.yourco.yourapp`)
+- `DEVELOPMENT_TEAM` → your Apple Developer **Team ID**
+- `INFOPLIST_KEY_CFBundleDisplayName` → your app's name (optional)
+- `aps-environment` → `production` for TestFlight/App Store builds, `development` for Xcode-Run testing
+- Default server URL + username: `Sources/Core.swift` (`AppSettings`) — or just type them on first launch
+- App icon: replace `Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png` (optional)
+
+**2. The server connector** (`app.py` + `.env`, on your server):
+- The `NUMBERS` map near the top of `app.py` → your number(s) and the label for each
+- Every value in `.env`: `PUBLIC_BASE` (your domain), `INBOX_USER`/`INBOX_PASS` (the app login),
+  `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`, the `AMI_*` values (only if using the desk-phone popup),
+  `YEALINK_EXT`, `NTFY_TOPIC`, and all `APNS_*` (#6)
+
+**3. Twilio.** Your own account + at least one number ($1.15/mo). For each number, set the
+**Messaging webhook (`SmsUrl`)** to `https://<your-domain>/sms-hook`. Outbound also needs
+A2P (#5); voice needs a SIP trunk + FreePBX (#7).
+
+**4. Domain + TLS.** Point a domain at your server, get a Let's Encrypt cert, and replace
+`pbx.bulwarkblack.com` in the nginx config with your domain.
+
+**5. Legal / A2P compliance** (`legal/`). Edit `privacy.html`, `terms.html`, `optin.html`
+with **your** business name, contact email, and number(s); host them publicly (served at
+`/legal/`); and reference those URLs when you register your **A2P 10DLC brand + campaign**.
+Without an approved campaign you can receive but not send.
+
+**6. Apple push (APNs).** Requires the $99/yr Apple Developer account. Create an APNs auth
+key (`.p8`); set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID` (= your app's bundle id),
+put the `.p8` on the server (`APNS_KEY_P8`), and set `APNS_HOST` to match your build
+(`api.push.apple.com` for production / TestFlight, `api.sandbox.push.apple.com` for Xcode-Run).
+
+**7. (Optional) Phone calls + desk phone** — only if you want voice, not just texts:
+- FreePBX: create extensions, inbound routes (number → extension), and outbound routes (caller ID per line)
+- A SIP phone registered to those extensions (I use a Yealink T54W with two lines)
+- An OpenVPN tunnel if the phone is remote (keeps SIP off the public internet)
 
 ## Infrastructure
 
