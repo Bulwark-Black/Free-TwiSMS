@@ -52,21 +52,31 @@ middle makes sense of everything, and the app and desk phone are the ends you ac
 | **OpenVPN** | A private tunnel so the desk phone can reach the server safely, without leaving phone signaling exposed on the open internet. |
 
 ```
-                         ┌──────────────────────── Twilio ─────────────────────────┐
-   PSTN  ◀──calls──▶ SIP Trunk            SMS/MMS webhooks ▶          REST API ◀ send
-                         └────────┬──────────────────┬──────────────────┬──────────┘
-                                  │ SIP/RTP           │ HTTPS POST       │ HTTPS
-                                  │ (Twilio IPs only) │ /sms-hook        │
-   ┌────────────────────────── server (pbx.bulwarkblack.com) ───────────────────────┐
-   │  nginx 443 ──/──▶ FreePBX admin                                                 │
-   │           ├─ /sms-hook,/api/,/sms,/m/ ─▶ SMS connector ──▶ SQLite + media       │
-   │           └─ /legal/ ─▶ static compliance pages                                 │
-   │  FreePBX/Asterisk ◀── SIP trunk ;  AMI ◀── connector (desk-phone text popups)   │
-   │  OpenVPN server (UDP 1194)                                                       │
-   └───────────┬───────────────────────────────────────────────┬─────────────────────┘
-               │ SIP/RTP over VPN                               │ APNs (HTTP/2, JWT)
-        Yealink T54W desk phone                          iPhone — Free TwiSMS app
-        (ext 101 = 509, ext 102 = 360)                   (JSON API + push notifications)
+                       Outside phone network (PSTN)
+                                     │
+                                     ▼
+                      ┌────────── TWILIO ────────────┐
+                      │   numbers · calls · SMS/MMS  │
+                      └──────────────┬───────────────┘
+                                     │
+                                     │  incoming texts (webhooks) +
+                                     │  outgoing texts/calls (API) — all HTTPS
+                                     ▼
+   ┌───────────────────────────── SERVER ───────────────────────────────┐
+   │  pbx.bulwarkblack.com  ·  nginx (TLS) sits out front               │
+   │                                                                    │
+   │  connector  ──▶  SQLite + media      (the texting brain)           │
+   │  FreePBX / Asterisk                  (the phone calls)             │
+   │  OpenVPN                             (secure phone link)           │
+   └────────────────┬─────────────────────────────────────┬─────────────┘
+                    │                                     │
+            SIP / RTP over VPN                        APNs push  +  JSON API
+                    │                                     │
+                    ▼                                     ▼
+        ┌────────────────────────┐            ┌────────────────────────┐
+        │  Yealink T54W          │            │  iPhone                │
+        │  desk phone (voice)    │            │  Free TwiSMS (texts)   │
+        └────────────────────────┘            └────────────────────────┘
 ```
 
 ### When a text comes in
