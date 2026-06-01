@@ -181,4 +181,8 @@ final class API {
     func mediaData(_ path: String) async throws -> Data {
         try await data(path)
     }
+
+    func markRead() async {
+        _ = try? await data("/api/mark-read", method: "POST", json: [:])
+    }
 }

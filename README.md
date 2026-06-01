@@ -37,6 +37,12 @@ Notifications are delivered via APNs (token auth key on the server).
   capability is already declared.
 - On first launch, enter your server URL + login.
 
+## Infrastructure
+
+The full server-side stack (PBX, SMS connector, Twilio, nginx, APNs, A2P) is
+documented in **[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md)** — exact build,
+config, endpoints, and operational runbook. (Secrets live in the server `.env`, never here.)
+
 ## Status
 
 Single-tenant personal build. See the project notes for what a multi-tenant /

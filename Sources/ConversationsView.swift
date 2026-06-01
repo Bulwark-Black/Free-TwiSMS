@@ -4,6 +4,7 @@ import UserNotifications
 struct ConversationsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var router: AppRouter
+    @Environment(\.scenePhase) private var scenePhase
     @State private var conversations: [Conversation] = []
     @State private var numbers: [OurNumber] = []
     @State private var box = "all"
@@ -60,10 +61,20 @@ struct ConversationsView: View {
                 }
             }
             .refreshable { await load() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    Task {
+                        try? await UNUserNotificationCenter.current().setBadgeCount(0)
+                        await api.markRead()
+                        await load()
+                    }
+                }
+            }
             .task {
                 PushManager.shared.configure(settings)
                 PushManager.shared.requestAndRegister()
                 try? await UNUserNotificationCenter.current().setBadgeCount(0)
+                await api.markRead()
                 await loadNumbers()
                 await load()
                 await poll()
