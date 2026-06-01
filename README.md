@@ -28,24 +28,28 @@ client for the Bulwark Black phone system.
 - Native Apple push notifications on incoming texts (tap opens the conversation)
 - Verification codes auto-highlighted
 
-## Architecture & how it works
+## How it all fits together
 
-Free TwiSMS is one piece of a small self-hosted phone system. The same two phone
-numbers are shared by a **Yealink desk phone** (voice) and the **iPhone app** (texts),
-with **Twilio** as the carrier and a **self-hosted server** tying it all together. This
-section explains every moving part and traces each thing that can happen end to end.
+Free TwiSMS isn't a standalone app — it's the pocket half of a little self-hosted phone
+system. The neat part is that **the same two phone numbers ring my desk phone *and* show up
+in the app**: Twilio is the phone company, a small server in the middle glues everything
+together, and the app and desk phone are just two windows into it. Below I walk through each
+piece, then trace, step by step, what actually happens when a text or a call comes in.
 
-### The components
+### The pieces
 
-| Component | Role |
+Think of it like a relay team — Twilio talks to the outside phone network, the server in the
+middle makes sense of everything, and the app and desk phone are the ends you actually touch.
+
+| Piece | What it does |
 |---|---|
-| **Twilio** | The carrier. Owns the two phone numbers; delivers/receives calls (via a SIP trunk) and SMS/MMS (via webhooks + REST API). |
-| **FreePBX / Asterisk** (Docker) | The PBX. Routes calls between Twilio and the desk phone, applies caller ID, runs voicemail. |
-| **SMS connector** (Python, Docker) | The brain for texting + the app. Receives Twilio's SMS webhooks, stores messages in SQLite, serves the JSON API and web inbox, sends outbound texts, and fires push notifications. |
-| **nginx** | TLS termination (`pbx.bulwarkblack.com`, Let's Encrypt) and a reverse proxy that routes each URL path to the right place. |
-| **OpenVPN** | A secure tunnel so the remote desk phone can reach the PBX without exposing SIP to the internet. |
-| **Free TwiSMS (this app)** | The iPhone client: reads/sends texts over the JSON API, receives push notifications. |
-| **APNs** | Apple's push service, used to notify the iPhone of incoming texts. |
+| **Twilio** | The phone company. It owns the numbers and is the bridge to the real phone network — handling calls (over a SIP trunk) and texts (over webhooks + its REST API). |
+| **The connector** (Python, in Docker) | The brain of the texting side. It catches incoming texts, files them in a little database, hands them to the app, sends your outgoing texts, and fires off notifications. It's one small Python file — no heavy framework. |
+| **FreePBX / Asterisk** (Docker) | The PBX — the part that handles actual *phone calls*, routing them between Twilio and the desk phone and taking voicemail. (Only needed for the voice side.) |
+| **nginx** | The front door. It handles HTTPS for the domain and quietly sends each request to the right place behind it. |
+| **The app** (this repo) | Your pocket window into all of it — reading and sending texts, and buzzing you when something arrives. |
+| **APNs** | Apple's notification service — how the server reaches out and lights up your phone. |
+| **OpenVPN** | A private tunnel so the desk phone can reach the server safely, without leaving phone signaling exposed on the open internet. |
 
 ```
                          ┌──────────────────────── Twilio ─────────────────────────┐
@@ -65,97 +69,112 @@ section explains every moving part and traces each thing that can happen end to 
         (ext 101 = 509, ext 102 = 360)                   (JSON API + push notifications)
 ```
 
-### Flow 1 — Receiving a text (the Twilio webhook)
+### When a text comes in
 
-1. Someone texts **+1 509** or **+1 360**. Twilio receives it.
-2. Each number has its **Messaging webhook (`SmsUrl`)** set to
-   `https://pbx.bulwarkblack.com/sms-hook`. Twilio sends an **HTTP POST** there with the
-   sender, recipient, body, and any media URLs.
-3. nginx routes `/sms-hook` to the connector. The connector **validates the
-   `X-Twilio-Signature`** header (HMAC-SHA1 of the URL+params with the Twilio auth token)
-   so only genuine Twilio requests are accepted.
-4. The message is written to **SQLite**. Any MMS images are downloaded from Twilio
-   (authenticated) and saved locally.
-5. The connector then **fans out** three notifications:
-   - **Desk phone:** a SIP `MESSAGE` is pushed to the Yealink via Asterisk **AMI**, so a text popup appears on the phone.
-   - **iPhone:** an **APNs** push (see Flow 4), carrying a preview and the unread badge count.
-   - **ntfy:** a no-credentials backup push (optional).
-6. The iPhone app (and the web inbox) show the new message — either from the push, or on
-   its next poll of the JSON API.
+Here's the whole journey of an incoming text, from someone's thumb to your pocket:
 
-### Flow 2 — Sending a text, photo, or file from the app
+1. Someone texts one of your numbers. Twilio, as the phone company, receives it first.
+2. You've told Twilio "whenever a text hits this number, hand it to my server" — that's the
+   *Messaging webhook*, pointed at `https://your-domain/sms-hook`. So Twilio immediately
+   forwards the whole message (who it's from, who it's to, the text, and any photo) to your server.
+3. The connector's first move is to make sure the message is *really* from Twilio and not
+   someone poking at the URL — it checks a signature Twilio stamps on every request, and
+   drops anything that doesn't match.
+4. Once it's verified, the connector files the text away in its little database (and quietly
+   downloads any attached photo).
+5. Then it fans out and nudges everything that should know about the new message, all at once:
+   - your **desk phone** gets a little text popup,
+   - your **iPhone** gets a push notification with a preview and an updated unread badge,
+   - and a backup notification fires over ntfy, just in case.
+6. The app shows the new message — the instant the notification lands, or the next time it
+   checks in with the server.
 
-1. You type a message and hit send. The app `POST`s to the connector's JSON API:
-   - **Text:** `POST /api/send` → connector calls the **Twilio REST API** (`Messages`) → Twilio sends it.
-   - **Photo (MMS):** `POST /api/send-mms` with the image base64-encoded. The connector saves it to a **public** path (`/m/<name>`), then tells Twilio to send an MMS whose `MediaUrl` points there — Twilio fetches the image from that public URL and delivers it.
-   - **File (PDF, docs):** `POST /api/send-file`. US carriers drop non-image MMS, so instead the connector hosts the file at `/m/<name>` and sends a **plain text with a download link**. Reliable for any file type.
-2. The sent message is recorded in SQLite so it appears in the thread.
+### When you send a text, photo, or file
 
-> **A2P note:** US carriers require **A2P 10DLC** brand + campaign registration before a
-> 10-digit number may send SMS. Until the campaign is approved, outbound sends are
-> accepted by Twilio but blocked by carriers (error 30034). Receiving is unaffected.
+When you hit send, the app hands the message to your server, which passes it on to Twilio —
+but the three kinds of attachment take slightly different routes:
 
-### Flow 3 — Reading messages in the app
+- **A plain text** goes straight through Twilio and out to the recipient. Simple.
+- **A photo** is a little trickier, because carriers want a *link* to the image, not the raw
+  bytes. So the connector tucks the photo away at a public web address and tells Twilio
+  "send this as a picture message, and here's where to grab it." Twilio fetches it and delivers it.
+- **A file** (a PDF, a document) is trickier still — US carriers tend to strip anything
+  that isn't a photo out of picture messages. So rather than fight that, the connector hosts
+  the file and just **texts the recipient a download link**, which works for any file type
+  and always gets through.
 
-The app is a thin client over a JSON API (HTTP Basic auth over HTTPS, credentials in the
-iOS Keychain). It polls a few of these:
+Either way, the sent message gets saved too, so it shows up in the thread like a normal reply.
 
-- `GET /api/numbers` — the numbers this account owns + their labels (the top switcher)
-- `GET /api/conversations[?box=<number>]` — threads, newest first
-- `GET /api/thread?via=<ournum>&with=<contact>` — the messages in one thread
-- `POST /api/send`, `/api/send-mms`, `/api/send-file` — outbound (Flow 2)
-- `POST /api/register-device` — hand the connector this device's APNs token (Flow 4)
-- `POST /api/mark-read` — reset the unread badge
-- `GET /sms/media/<name>` — fetch an image in a thread (authenticated)
+> **One important catch for US numbers:** carriers won't let an ordinary 10-digit number
+> send texts at all until you've gone through *A2P 10DLC* registration (covered in the setup
+> section). Until that's approved you can **receive** texts perfectly, but anything you
+> *send* gets quietly blocked. Receiving works from day one; sending is the part that takes
+> paperwork.
 
-The connector reads/writes SQLite and returns JSON; there is no heavy framework — it's a
-single Python file using only the standard library plus `httpx`, `pyjwt`, `cryptography`.
+### How the app reads your messages
 
-### Flow 4 — Push notifications (APNs)
+The app itself is deliberately simple — it holds no data of its own. It just asks the server
+for things over a small set of requests (all behind a login, over HTTPS, with your
+credentials stored safely in the iPhone's Keychain). In plain English, it asks:
 
-1. On launch the app asks iOS for a **device token** and sends it to
-   `POST /api/register-device`. The connector stores it.
-2. When a text arrives (Flow 1), the connector builds an **ES256 JWT** signed with the
-   APNs auth key (`.p8`), then makes an **HTTP/2 POST** to Apple's APNs with the alert,
-   the **unread badge count**, and custom data (which conversation it belongs to).
-3. Apple delivers the push to the phone. Tapping it **deep-links** straight to that
-   conversation. Opening the app calls `mark-read`, which clears the badge.
+- *what numbers do I have?* (to build the switcher at the top)
+- *give me my conversations, newest first*
+- *give me the messages in this one conversation*
+- *send this for me* · *I've read these, clear the badge* · *here's my phone's notification address*
 
-> The APNs **environment must match the app build**: a TestFlight/App Store build uses
-> the **production** APNs host; an Xcode "Run" (debug) build uses **sandbox**. The auth
-> key is scoped to one or both environments. A mismatch is the classic
-> `BadEnvironmentKeyInToken` / `BadDeviceToken` error.
+The server answers each one straight out of its database. That's the entire app-to-server
+relationship — no magic, just a handful of tidy requests. (For the curious, those map to
+`/api/numbers`, `/api/conversations`, `/api/thread`, `/api/send*`, `/api/mark-read`, and
+`/api/register-device`.)
 
-### Flow 5 — Phone calls (the SIP trunk)
+### How the notifications actually reach your phone
 
-Voice never touches the connector — it flows through Twilio's **Elastic SIP Trunk** and
-Asterisk:
+1. When the app launches, it asks iOS for this phone's unique "push address" and hands it to
+   the server, so the server knows where to reach you.
+2. When a text arrives, the server builds a securely-signed little message and sends it to
+   **Apple's** push service, including the preview and your unread count.
+3. Apple delivers it to your phone. Tap it and the app opens **straight to that
+   conversation**; open the app and the badge clears.
 
-- **Inbound:** caller → Twilio → SIP trunk → Asterisk → the number's **Inbound Route** →
-  rings the matching extension (509 → ext 101, 360 → ext 102) → the **Yealink** over the VPN.
-- **Outbound:** you pick **Line 1** (Bulwark Black) or **Line 2** (Rural Tech) on the
-  desk phone → Asterisk's **Outbound Route** stamps that line's caller ID → SIP trunk →
-  Twilio → the PSTN.
-- **Unanswered** calls fall through to that extension's **voicemail**.
+> **The one gotcha** (and the thing that cost me hours): Apple runs two separate notification
+> worlds — a **sandbox** one for apps you run straight from Xcode, and a **production** one
+> for apps installed through TestFlight or the App Store. Your push key *and* your server
+> have to be pointed at the same world the app was installed from, or Apple just refuses the
+> notification with a cryptic `BadDeviceToken` error. Match them and it works instantly.
 
-The SIP trunk is firewalled so SIP/RTP is accepted **only from Twilio's IP ranges and
-the VPN** — the PBX is never exposed to the open internet (toll-fraud protection).
+### How phone calls work (the optional voice side)
 
-### Why the VPN
+Calls never touch the texting connector at all — they ride a completely separate path
+through Twilio and FreePBX:
 
-The desk phone is remote. Rather than expose SIP to the internet (which invites
-brute-force registration and toll fraud), the phone joins an **OpenVPN** tunnel and
-registers to the PBX over that private link. This also sidestepped a prior CGNAT issue at
-the phone's location.
+- **Someone calls you:** Twilio receives the call and hands it to FreePBX, which looks at
+  which number was dialed and rings the matching line on the desk phone (over the VPN). No
+  answer? It rolls to that line's voicemail.
+- **You call out:** you pick which line/identity you want on the desk phone, FreePBX stamps
+  that line's caller ID onto the call, and sends it back out through Twilio to the real phone
+  network. (That's how each number can show its own business name on outgoing calls.)
 
-### Security model
+For safety, the phone side is firewalled to only accept traffic from Twilio and the VPN — the
+PBX is never sitting open on the public internet, which is how people get hit with toll fraud.
 
-- All web traffic is **HTTPS** (Let's Encrypt). The app and web inbox use **HTTP Basic
-  auth**; the iPhone stores credentials in the **Keychain**.
-- Twilio webhooks are **signature-validated**; only `/m/` and `/legal/` are intentionally
-  public (so Twilio and message recipients can fetch attachments / compliance pages).
-- SIP is restricted to Twilio + VPN. Secrets (Twilio token, APNs key, passwords) live in
-  a root-only `.env` on the server and are **never committed** to this repo.
+### Why there's a VPN
+
+My desk phone lives somewhere other than the server. The lazy way to connect them would be
+to expose the phone system to the internet — but that's exactly what bots scan for, brute-
+forcing their way in to rack up fraudulent international calls. So instead the phone dials
+into a private VPN tunnel and reaches the server through that. (It also neatly solved a
+networking snag at the phone's location.)
+
+### How it's kept secure
+
+- Everything over the web is **HTTPS**. The app and web inbox sit behind a **login**, and
+  your credentials live in the iPhone's **Keychain**, not in plain text anywhere.
+- Every incoming text from Twilio is **signature-checked**, so nobody can fake messages into
+  your inbox. The only intentionally-public spots are the attachment links and the legal
+  pages — and those *have* to be reachable so Twilio and recipients can load them.
+- The phone system only listens to Twilio and the VPN. And every secret — Twilio keys, the
+  Apple push key, passwords — lives in a locked-down file on the server and **never** goes
+  into this repo.
 
 ## Building
 
@@ -227,7 +246,7 @@ those plus the `.p8` onto your server. The one thing that *will* trip you up: th
 **environment has to match how you install the app**. A build you run straight from Xcode
 uses Apple's **sandbox**; a build you ship through **TestFlight** or the App Store uses
 **production**. Mismatch them and you get cryptic `BadDeviceToken` errors. (Ask me how I
-know — see Flow 4 above.)
+know — see "How the notifications actually reach your phone" above.)
 
 **7. (Optional) The phone-call side.** Only bother with this if you want real phone calls
 and a physical desk phone, not just texting — the texting app needs none of it. This is
