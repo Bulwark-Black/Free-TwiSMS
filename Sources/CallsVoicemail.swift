@@ -8,6 +8,7 @@ struct CallsView: View {
     @State private var calls: [CallRecord] = []
     @State private var error: String?
     @State private var loaded = false
+    @State private var callAlert: String?
 
     private var api: API { API(settings) }
 
@@ -21,12 +22,28 @@ struct CallsView: View {
                     ContentUnavailableView("No Calls", systemImage: "phone",
                                            description: Text("Incoming calls will show up here."))
                 } else {
-                    List(calls) { CallRow(c: $0) }.listStyle(.plain)
+                    List(calls) { c in
+                        CallRow(c: c, onCall: { Task { await callBack(c) } })
+                    }
+                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Calls")
             .refreshable { await load() }
             .task { await load(); await poll() }
+            .alert("Connecting call", isPresented: Binding(
+                get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {
+                Button("OK", role: .cancel) { callAlert = nil }
+            } message: { Text(callAlert ?? "") }
+        }
+    }
+
+    private func callBack(_ c: CallRecord) async {
+        do {
+            try await api.call(from: c.via, to: c.from)
+            callAlert = "Your phone will ring in a moment — answer it, and you'll be connected to \(c.from_display) showing your \(c.ext_label) number."
+        } catch {
+            callAlert = "Couldn't start the call: \(error.localizedDescription)"
         }
     }
 
@@ -46,6 +63,7 @@ struct CallsView: View {
 
 struct CallRow: View {
     let c: CallRecord
+    let onCall: () -> Void
 
     var body: some View {
         HStack(spacing: 13) {
@@ -64,7 +82,15 @@ struct CallRow: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Text(relativeTime(c.ts)).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(relativeTime(c.ts)).font(.caption).foregroundStyle(.secondary)
+                Button(action: onCall) {
+                    Image(systemName: "phone.arrow.up.right.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.green)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.vertical, 4)
     }

@@ -17,6 +17,7 @@ struct ThreadView: View {
     @State private var showEmoji = false
     @State private var showPhotoPicker = false
     @State private var showFileImporter = false
+    @State private var callAlert: String?
 
     private var api: API { API(settings) }
 
@@ -52,8 +53,26 @@ struct ThreadView: View {
                     Text(subtitle).font(.caption2).foregroundStyle(.secondary)
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { Task { await callContact() } } label: {
+                    Image(systemName: "phone.fill").foregroundStyle(.green)
+                }
+            }
         }
+        .alert("Connecting call", isPresented: Binding(
+            get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {
+            Button("OK", role: .cancel) { callAlert = nil }
+        } message: { Text(callAlert ?? "") }
         .task { await load(); await poll() }
+    }
+
+    private func callContact() async {
+        do {
+            try await api.call(from: via, to: contact)
+            callAlert = "Your phone will ring in a moment — answer it, and you'll be connected to \(title) showing your \(subtitle) number."
+        } catch {
+            callAlert = "Couldn't start the call: \(error.localizedDescription)"
+        }
     }
 
     private var replyBar: some View {

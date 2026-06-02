@@ -42,6 +42,7 @@ struct CallRecord: Codable, Identifiable {
     let from: String
     let from_display: String
     let ext: String
+    let via: String
     let ext_label: String
     let disposition: String
     let missed: Bool
@@ -224,5 +225,9 @@ final class API {
 
     func voicemailAudio(ext: String, msgid: String) async throws -> Data {
         try await data("/api/voicemail/\(ext)/\(msgid)/audio")
+    }
+
+    func call(from: String, to: String) async throws {
+        _ = try await data("/api/call", method: "POST", json: ["from": from, "to": to])
     }
 }
