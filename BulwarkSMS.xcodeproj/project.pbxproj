@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0A2F1F9D37615FC1988CC85C /* CallsVoicemail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59BFA4D0CB1CF02C1A5FBA44 /* CallsVoicemail.swift */; };
 		1F6DEFEBEE9C76BC4DD6751B /* BulwarkSMSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90D1295350DE7E0914E68462 /* BulwarkSMSApp.swift */; };
+		2901BBC067B833702BC6D478 /* DialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BB1B92AB42A397E39551E8 /* DialView.swift */; };
 		659CBE6BB99418F4CEFBAE5C /* ConversationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A370DD1D3848539D1E6137 /* ConversationsView.swift */; };
 		6975AAA6FA519EC3CC3993EE /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0749742686295EB677A52BE6 /* ThreadView.swift */; };
 		6E50B689F0269CA3686980DA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B6EBE3B27EA22A3C9544517 /* SettingsView.swift */; };
@@ -21,6 +22,7 @@
 		0749742686295EB677A52BE6 /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
 		0E54228643B463AFC15997EF /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
 		4B6EBE3B27EA22A3C9544517 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		51BB1B92AB42A397E39551E8 /* DialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DialView.swift; sourceTree = "<group>"; };
 		59BFA4D0CB1CF02C1A5FBA44 /* CallsVoicemail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallsVoicemail.swift; sourceTree = "<group>"; };
 		87EFE91B949ADC37E1CD5820 /* BulwarkSMS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BulwarkSMS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		90D1295350DE7E0914E68462 /* BulwarkSMSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulwarkSMSApp.swift; sourceTree = "<group>"; };
@@ -54,6 +56,7 @@
 				59BFA4D0CB1CF02C1A5FBA44 /* CallsVoicemail.swift */,
 				E3A370DD1D3848539D1E6137 /* ConversationsView.swift */,
 				DE33BBE300CF6BCF6314ACF1 /* Core.swift */,
+				51BB1B92AB42A397E39551E8 /* DialView.swift */,
 				0E54228643B463AFC15997EF /* Push.swift */,
 				4B6EBE3B27EA22A3C9544517 /* SettingsView.swift */,
 				0749742686295EB677A52BE6 /* ThreadView.swift */,
@@ -144,6 +147,7 @@
 				0A2F1F9D37615FC1988CC85C /* CallsVoicemail.swift in Sources */,
 				659CBE6BB99418F4CEFBAE5C /* ConversationsView.swift in Sources */,
 				9008EC2F31542CE1DF69ED6A /* Core.swift in Sources */,
+				2901BBC067B833702BC6D478 /* DialView.swift in Sources */,
 				C54E45CA100BEA6BCBC2E098 /* Push.swift in Sources */,
 				6E50B689F0269CA3686980DA /* SettingsView.swift in Sources */,
 				6975AAA6FA519EC3CC3993EE /* ThreadView.swift in Sources */,
