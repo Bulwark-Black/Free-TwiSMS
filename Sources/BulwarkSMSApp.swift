@@ -18,10 +18,21 @@ struct BulwarkSMSApp: App {
 
 struct RootView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var router: AppRouter
 
     var body: some View {
         if settings.isConfigured {
-            ConversationsView()
+            TabView(selection: $router.selectedTab) {
+                ConversationsView()
+                    .tabItem { Label("Messages", systemImage: "message.fill") }
+                    .tag(0)
+                CallsView()
+                    .tabItem { Label("Calls", systemImage: "phone.fill") }
+                    .tag(1)
+                VoicemailView()
+                    .tabItem { Label("Voicemail", systemImage: "recordingtape") }
+                    .tag(2)
+            }
         } else {
             NavigationStack {
                 SettingsView(firstRun: true)

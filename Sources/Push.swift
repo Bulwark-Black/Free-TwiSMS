@@ -14,7 +14,9 @@ struct ThreadTarget: Hashable {
 final class AppRouter: ObservableObject {
     static let shared = AppRouter()
     @Published var path: [ThreadTarget] = []
-    func open(_ t: ThreadTarget) { path = [t] }
+    @Published var selectedTab = 0     // 0 = Messages, 1 = Calls, 2 = Voicemail
+    func open(_ t: ThreadTarget) { selectedTab = 0; path = [t] }
+    func openCalls() { selectedTab = 1 }
 }
 
 @MainActor
@@ -80,7 +82,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse) async {
         let u = response.notification.request.content.userInfo
-        if let via = u["via"] as? String, let contact = u["contact"] as? String {
+        if (u["type"] as? String) == "call" {
+            await MainActor.run { AppRouter.shared.openCalls() }
+        } else if let via = u["via"] as? String, let contact = u["contact"] as? String {
             let target = ThreadTarget(via: via, contact: contact,
                                       title: (u["contact_display"] as? String) ?? contact,
                                       subtitle: (u["via_label"] as? String) ?? "")

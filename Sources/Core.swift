@@ -37,6 +37,34 @@ struct Message: Codable, Identifiable, Hashable {
     var incoming: Bool { dir == "in" }
 }
 
+struct CallRecord: Codable, Identifiable {
+    let ts: Double
+    let from: String
+    let from_display: String
+    let ext: String
+    let ext_label: String
+    let disposition: String
+    let missed: Bool
+    let duration: Int
+    var id: String { "\(ts)-\(from)-\(ext)" }
+}
+
+struct Voicemail: Codable, Identifiable {
+    let ext: String
+    let ext_label: String
+    let msgid: String
+    let from: String
+    let from_display: String
+    let callerid: String
+    let ts: Double
+    let duration: Int
+    let has_audio: Bool
+    enum CodingKeys: String, CodingKey {
+        case ext, ext_label, msgid = "id", from, from_display, callerid, ts, duration, has_audio
+    }
+    var id: String { ext + "-" + msgid }
+}
+
 // MARK: - Helpers
 
 func encodeQuery(_ s: String) -> String {
@@ -184,5 +212,17 @@ final class API {
 
     func markRead() async {
         _ = try? await data("/api/mark-read", method: "POST", json: [:])
+    }
+
+    func calls() async throws -> [CallRecord] {
+        try JSONDecoder().decode([CallRecord].self, from: try await data("/api/calls"))
+    }
+
+    func voicemails() async throws -> [Voicemail] {
+        try JSONDecoder().decode([Voicemail].self, from: try await data("/api/voicemails"))
+    }
+
+    func voicemailAudio(ext: String, msgid: String) async throws -> Data {
+        try await data("/api/voicemail/\(ext)/\(msgid)/audio")
     }
 }
