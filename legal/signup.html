@@ -1,0 +1,46 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Text Message Sign-Up - Bulwark Black LLC</title><style>body{font:16px/1.6 -apple-system,system-ui,Arial,sans-serif;color:#1a1a1a;max-width:560px;margin:0 auto;padding:28px 20px}
+h1{font-size:24px}nav{margin:0 0 20px;font-size:14px}nav a{margin-right:14px;color:#0a58ca}
+label{display:block;font-weight:600;margin:18px 0 6px}
+input[type=text],input[type=tel],select{width:100%;padding:11px 12px;font-size:16px;border:1px solid #bbb;border-radius:10px;box-sizing:border-box}
+.consent{display:flex;gap:10px;align-items:flex-start;margin:22px 0;font-weight:400}
+.consent input{margin-top:5px;width:20px;height:20px;flex:0 0 auto}
+.consent label{font-weight:400;margin:0}
+button{margin-top:8px;width:100%;padding:14px;font-size:17px;font-weight:700;color:#fff;background:#16AE1A;border:0;border-radius:12px;cursor:pointer}
+button:hover{background:#129214}
+.hp{position:absolute;left:-9999px;top:-9999px}
+#err{display:none;background:#fde8e8;color:#9b1c1c;border:1px solid #f5b5b5;border-radius:10px;padding:11px 13px;margin:6px 0 0;font-size:15px}
+.fine{color:#555;font-size:13px}footer{margin-top:30px;border-top:1px solid #ddd;padding-top:14px;color:#666;font-size:13px}</style></head><body>
+<nav><a href="/legal/privacy.html">Privacy Policy</a><a href="/legal/terms.html">SMS Terms</a><a href="/legal/optin.html">Text Opt-In</a></nav>
+<h1>Sign up for text messages</h1>
+<p>Get appointment confirmations, account notifications, and verification codes by text from Bulwark Black LLC and Rural Tech and Support.</p>
+<div id="err"></div>
+<form method="post" action="/api/optin" autocomplete="on">
+  <label for="name">Full name</label>
+  <input type="text" id="name" name="name" required>
+
+  <label for="phone">Mobile number</label>
+  <input type="tel" id="phone" name="phone" placeholder="(509) 555-0123" required>
+
+  <label for="brand">Which business?</label>
+  <select id="brand" name="brand">
+    <option value="Bulwark Black LLC">Bulwark Black LLC</option>
+    <option value="Rural Tech and Support">Rural Tech and Support</option>
+  </select>
+
+  <!-- bot honeypot: real people leave this empty -->
+  <div class="hp" aria-hidden="true"><label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label></div>
+
+  <div class="consent">
+    <input type="checkbox" id="agree" name="agree" value="on">
+    <label for="agree">I agree to receive text messages from Bulwark Black LLC / Rural Tech and Support, including account notifications, appointment confirmations, and one-time verification codes. Consent is not a condition of any purchase. Message frequency varies. Message and data rates may apply. Reply STOP to opt out, HELP for help.</label>
+  </div>
+
+  <button type="submit">Sign me up</button>
+  <p class="fine">By submitting, you confirm the number is yours and you agree to our <a href="/legal/privacy.html">Privacy Policy</a> and <a href="/legal/terms.html">SMS Terms</a>. We never share your number with third parties.</p>
+</form>
+<footer>Bulwark Black LLC and Rural Tech and Support. Contact: aalascola@gmail.com, (509) 309-8286 or (360) 302-4667.</footer>
+<script>
+(function(){var m={consent:"Please check the box to agree to receive text messages.",phone:"Please enter a valid US mobile number.",name:"Please enter your full name.",brand:"Please choose a business."};
+var e=new URLSearchParams(location.search).get("err");if(e&&m[e]){var d=document.getElementById("err");d.textContent=m[e];d.style.display="block";}})();
+</script>
+</body></html>
