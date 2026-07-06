@@ -11,6 +11,7 @@ struct CallsView: View {
     @State private var error: String?
     @State private var loaded = false
     @State private var callAlert: String?
+    @State private var naming: PhoneID?
 
     private var api: API { API(settings) }
 
@@ -27,7 +28,8 @@ struct CallsView: View {
                     List(calls) { c in
                         CallRow(c: c,
                                 onCall: { Task { await callBack(c) } },
-                                onMessage: { textBack(c) })
+                                onMessage: { textBack(c) },
+                                onSaveContact: { naming = PhoneID(id: c.from) })
                     }
                     .listStyle(.plain)
                 }
@@ -39,6 +41,7 @@ struct CallsView: View {
                 get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {
                 Button("OK", role: .cancel) { callAlert = nil }
             } message: { Text(callAlert ?? "") }
+            .sheet(item: $naming) { p in NameContactSheet(existingPhone: p.id) { Task { await load() } } }
         }
     }
 
@@ -53,7 +56,7 @@ struct CallsView: View {
 
     private func textBack(_ c: CallRecord) {
         router.open(ThreadTarget(via: c.via, contact: c.from,
-                                 title: c.from_display, subtitle: c.ext_label))
+                                 title: c.displayName, subtitle: c.ext_label))
     }
 
     private func load() async {
@@ -74,6 +77,7 @@ struct CallRow: View {
     let c: CallRecord
     let onCall: () -> Void
     let onMessage: () -> Void
+    let onSaveContact: () -> Void
 
     var body: some View {
         HStack(spacing: 13) {
@@ -85,7 +89,7 @@ struct CallRow: View {
             .frame(width: 42, height: 42)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(c.from_display)
+                Text(c.displayName)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(c.missed ? .red : .primary)
                 Text(c.ext_label + (c.duration > 0 ? "  ·  \(c.duration)s" : (c.missed ? "  ·  Missed" : "")))
@@ -108,6 +112,7 @@ struct CallRow: View {
         }
         .padding(.vertical, 4)
         .contextMenu {
+            Button(action: onSaveContact) { Label("Save Contact", systemImage: "person.crop.circle.badge.plus") }
             Button { UIPasteboard.general.string = c.from } label: {
                 Label("Copy Number", systemImage: "doc.on.doc")
             }
@@ -158,6 +163,7 @@ struct VoicemailView: View {
     @State private var callAlert: String?
     @State private var suggestingID: String?
     @State private var suggestError: String?
+    @State private var naming: PhoneID?
 
     private var api: API { API(settings) }
 
@@ -179,7 +185,8 @@ struct VoicemailView: View {
                                      onTap: { Task { await toggle(vm) } },
                                      onMessage: { textBack(vm) },
                                      onCall: { Task { await callBack(vm) } },
-                                     onSuggest: { Task { await suggestReply(vm) } })
+                                     onSuggest: { Task { await suggestReply(vm) } },
+                                     onSaveContact: { naming = PhoneID(id: vm.from) })
                     }
                     .listStyle(.plain)
                 }
@@ -195,12 +202,13 @@ struct VoicemailView: View {
                 get: { suggestError != nil }, set: { if !$0 { suggestError = nil } })) {
                 Button("OK", role: .cancel) { suggestError = nil }
             } message: { Text(suggestError ?? "") }
+            .sheet(item: $naming) { p in NameContactSheet(existingPhone: p.id) { Task { await load() } } }
         }
     }
 
     private func textBack(_ vm: Voicemail) {
         router.open(ThreadTarget(via: vm.viaNumber, contact: vm.from,
-                                 title: vm.from_display, subtitle: vm.ext_label))
+                                 title: vm.displayName, subtitle: vm.ext_label))
     }
 
     private func suggestReply(_ vm: Voicemail) async {
@@ -209,7 +217,7 @@ struct VoicemailView: View {
         do {
             let text = try await api.suggestVoicemailReply(ext: vm.ext, msgid: vm.msgid)
             router.open(ThreadTarget(via: vm.viaNumber, contact: vm.from,
-                                     title: vm.from_display, subtitle: vm.ext_label,
+                                     title: vm.displayName, subtitle: vm.ext_label,
                                      prefill: text))
         } catch {
             suggestError = error.localizedDescription
@@ -259,6 +267,7 @@ struct VoicemailRow: View {
     let onMessage: () -> Void
     let onCall: () -> Void
     let onSuggest: () -> Void
+    let onSaveContact: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -279,7 +288,7 @@ struct VoicemailRow: View {
                 .disabled(!vm.has_audio)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(vm.from_display).font(.body.weight(.semibold))
+                    Text(vm.displayName).font(.body.weight(.semibold))
                     Text(vm.ext_label + (vm.duration > 0 ? "  ·  \(vm.duration)s" : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -322,6 +331,7 @@ struct VoicemailRow: View {
         }
         .padding(.vertical, 6)
         .contextMenu {
+            Button(action: onSaveContact) { Label("Save Contact", systemImage: "person.crop.circle.badge.plus") }
             Button { UIPasteboard.general.string = vm.from } label: {
                 Label("Copy Number", systemImage: "doc.on.doc")
             }

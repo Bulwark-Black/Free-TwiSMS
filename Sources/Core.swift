@@ -16,10 +16,12 @@ struct Conversation: Codable, Identifiable, Hashable {
     let via_label: String
     let contact: String
     let contact_display: String
+    let contact_name: String?
     let last_body: String
     let last_ts: Double
     let last_dir: String
     var id: String { via + "|" + contact }
+    var displayName: String { (contact_name?.isEmpty == false) ? contact_name! : contact_display }
 }
 
 struct Media: Codable, Hashable {
@@ -45,6 +47,7 @@ struct CallRecord: Codable, Identifiable {
     let ts: Double
     let from: String
     let from_display: String
+    let contact_name: String?
     let ext: String
     let via: String
     let ext_label: String
@@ -52,6 +55,7 @@ struct CallRecord: Codable, Identifiable {
     let missed: Bool
     let duration: Int
     var id: String { "\(ts)-\(from)-\(ext)" }
+    var displayName: String { (contact_name?.isEmpty == false) ? contact_name! : from_display }
 }
 
 struct Voicemail: Codable, Identifiable {
@@ -67,14 +71,23 @@ struct Voicemail: Codable, Identifiable {
     let has_audio: Bool
     let transcript: String?
     let transcript_status: String?
+    let contact_name: String?
     enum CodingKeys: String, CodingKey {
         case ext, ext_label, msgid = "id", via, from, from_display, callerid, ts, duration,
-             has_audio, transcript, transcript_status
+             has_audio, transcript, transcript_status, contact_name
     }
     var id: String { ext + "-" + msgid }
     var viaNumber: String { via ?? "" }
+    var displayName: String { (contact_name?.isEmpty == false) ? contact_name! : from_display }
     var transcriptText: String { (transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
     var isTranscribing: Bool { transcriptText.isEmpty && (transcript_status ?? "pending") != "done" }
+}
+
+struct Contact: Codable, Identifiable, Hashable {
+    let phone: String
+    let name: String
+    let display: String
+    var id: String { phone }
 }
 
 // MARK: - Helpers
@@ -232,6 +245,14 @@ final class API {
 
     func voicemails() async throws -> [Voicemail] {
         try JSONDecoder().decode([Voicemail].self, from: try await data("/api/voicemails"))
+    }
+
+    func contacts() async throws -> [Contact] {
+        try JSONDecoder().decode([Contact].self, from: try await data("/api/contacts"))
+    }
+
+    func saveContact(phone: String, name: String) async throws {
+        _ = try await data("/api/contact", method: "POST", json: ["phone": phone, "name": name])
     }
 
     func voicemailAudio(ext: String, msgid: String) async throws -> Data {

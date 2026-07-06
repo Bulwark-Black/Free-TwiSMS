@@ -22,6 +22,7 @@ struct ThreadView: View {
     @State private var showFileImporter = false
     @State private var callAlert: String?
     @State private var suggesting = false
+    @State private var showName = false
 
     private var api: API { API(settings) }
 
@@ -68,10 +69,18 @@ struct ThreadView: View {
                 .disabled(suggesting)
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button { showName = true } label: {
+                    Image(systemName: "person.crop.circle").foregroundStyle(Color.accentColor)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { Task { await callContact() } } label: {
                     Image(systemName: "phone.fill").foregroundStyle(.green)
                 }
             }
+        }
+        .sheet(isPresented: $showName) {
+            NameContactSheet(existingPhone: contact)
         }
         .alert("Connecting call", isPresented: Binding(
             get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {

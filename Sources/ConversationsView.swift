@@ -37,7 +37,7 @@ struct ConversationsView: View {
                     List {
                         ForEach(filtered) { c in
                             NavigationLink(value: ThreadTarget(via: c.via, contact: c.contact,
-                                                               title: c.contact_display, subtitle: c.via_label)) {
+                                                               title: c.displayName, subtitle: c.via_label)) {
                                 ConversationRow(c: c)
                             }
                         }
@@ -139,8 +139,11 @@ struct ConversationRow: View {
     let c: Conversation
 
     private var initials: String {
-        let digits = c.contact.filter(\.isNumber)
-        return String(digits.suffix(2))
+        if let n = c.contact_name, !n.isEmpty {
+            let letters = n.split(separator: " ").compactMap(\.first)
+            if !letters.isEmpty { return String(letters.prefix(2)).uppercased() }
+        }
+        return String(c.contact.filter(\.isNumber).suffix(2))
     }
 
     private var draft: String {
@@ -157,7 +160,7 @@ struct ConversationRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(c.contact_display).font(.body.weight(.semibold))
+                    Text(c.displayName).font(.body.weight(.semibold))
                     Spacer()
                     Text(relativeTime(c.last_ts)).font(.caption).foregroundStyle(.secondary)
                 }

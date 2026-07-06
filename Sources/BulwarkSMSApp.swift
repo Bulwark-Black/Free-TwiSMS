@@ -34,9 +34,12 @@ struct RootView: View {
                 VoicemailView()
                     .tabItem { Label("Voicemail", systemImage: "recordingtape") }
                     .tag(2)
+                ContactsView()
+                    .tabItem { Label("Contacts", systemImage: "person.crop.circle") }
+                    .tag(3)
                 DialView()
                     .tabItem { Label("Dial", systemImage: "phone.arrow.up.right.fill") }
-                    .tag(3)
+                    .tag(4)
             }
         } else {
             NavigationStack {
