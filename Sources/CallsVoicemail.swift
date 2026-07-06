@@ -157,6 +157,7 @@ struct VoicemailView: View {
     @State private var loaded = false
     @State private var callAlert: String?
     @State private var suggestingID: String?
+    @State private var suggestError: String?
 
     private var api: API { API(settings) }
 
@@ -190,6 +191,10 @@ struct VoicemailView: View {
                 get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {
                 Button("OK", role: .cancel) { callAlert = nil }
             } message: { Text(callAlert ?? "") }
+            .alert("Couldn't suggest a reply", isPresented: Binding(
+                get: { suggestError != nil }, set: { if !$0 { suggestError = nil } })) {
+                Button("OK", role: .cancel) { suggestError = nil }
+            } message: { Text(suggestError ?? "") }
         }
     }
 
@@ -203,11 +208,11 @@ struct VoicemailView: View {
         defer { suggestingID = nil }
         do {
             let text = try await api.suggestVoicemailReply(ext: vm.ext, msgid: vm.msgid)
-            DraftStore.set(text, via: vm.viaNumber, contact: vm.from)
             router.open(ThreadTarget(via: vm.viaNumber, contact: vm.from,
-                                     title: vm.from_display, subtitle: vm.ext_label))
+                                     title: vm.from_display, subtitle: vm.ext_label,
+                                     prefill: text))
         } catch {
-            self.error = error.localizedDescription
+            suggestError = error.localizedDescription
         }
     }
 

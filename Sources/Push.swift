@@ -8,6 +8,7 @@ struct ThreadTarget: Hashable {
     let contact: String
     let title: String
     let subtitle: String
+    var prefill: String? = nil   // seed the reply box (e.g. an AI-suggested reply)
 }
 
 @MainActor

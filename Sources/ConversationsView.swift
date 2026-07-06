@@ -50,7 +50,7 @@ struct ConversationsView: View {
             .safeAreaInset(edge: .top, spacing: 0) { switcher }
             .navigationDestination(for: ThreadTarget.self) { t in
                 ThreadView(via: t.via, contact: t.contact,
-                           title: t.title, subtitle: t.subtitle)
+                           title: t.title, subtitle: t.subtitle, prefill: t.prefill)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

@@ -9,6 +9,7 @@ struct ThreadView: View {
     let contact: String
     let title: String
     let subtitle: String
+    var prefill: String? = nil
 
     @State private var messages: [Message] = []
     @State private var draft = ""
@@ -79,7 +80,9 @@ struct ThreadView: View {
         .task { await load(); await poll() }
         .onAppear {
             if !draftLoaded {
-                draft = DraftStore.get(via: via, contact: contact)
+                let saved = DraftStore.get(via: via, contact: contact)
+                // A prefill (e.g. an AI-suggested reply) wins over an empty saved draft.
+                draft = (prefill?.isEmpty == false) ? prefill! : saved
                 draftLoaded = true
             }
         }
@@ -298,6 +301,24 @@ struct EmojiPicker: View {
     }
 }
 
+// Turn raw URLs in a message into tappable, underlined links (white, to read on colored bubbles).
+func linkified(_ text: String) -> AttributedString {
+    var attr = AttributedString(text)
+    guard let detector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue) else { return attr }
+    let ns = text as NSString
+    for match in detector.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+        guard let url = match.url,
+              let sr = Range(match.range, in: text),
+              let lo = AttributedString.Index(sr.lowerBound, within: attr),
+              let hi = AttributedString.Index(sr.upperBound, within: attr) else { continue }
+        attr[lo..<hi].link = url
+        attr[lo..<hi].underlineStyle = .single
+        attr[lo..<hi].foregroundColor = .white
+    }
+    return attr
+}
+
 struct Bubble: View {
     @EnvironmentObject var settings: AppSettings
     let message: Message
@@ -316,9 +337,10 @@ struct Bubble: View {
                         }
                     }
                     if !message.body.isEmpty {
-                        Text(message.body)
+                        Text(linkified(message.body))
                             .font(.body)
                             .textSelection(.enabled)
+                            .tint(.white)
                     }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 9)
