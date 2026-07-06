@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ThreadView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var templates: TemplateStore
     let via: String
     let contact: String
     let title: String
@@ -11,6 +12,7 @@ struct ThreadView: View {
 
     @State private var messages: [Message] = []
     @State private var draft = ""
+    @State private var draftLoaded = false
     @State private var error: String?
     @State private var sending = false
     @State private var pickerItem: PhotosPickerItem?
@@ -18,6 +20,7 @@ struct ThreadView: View {
     @State private var showPhotoPicker = false
     @State private var showFileImporter = false
     @State private var callAlert: String?
+    @State private var suggesting = false
 
     private var api: API { API(settings) }
 
@@ -54,6 +57,16 @@ struct ThreadView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button { Task { await suggestReply() } } label: {
+                    if suggesting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "sparkles").foregroundStyle(Color.accentColor)
+                    }
+                }
+                .disabled(suggesting)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { Task { await callContact() } } label: {
                     Image(systemName: "phone.fill").foregroundStyle(.green)
                 }
@@ -64,6 +77,33 @@ struct ThreadView: View {
             Button("OK", role: .cancel) { callAlert = nil }
         } message: { Text(callAlert ?? "") }
         .task { await load(); await poll() }
+        .onAppear {
+            if !draftLoaded {
+                draft = DraftStore.get(via: via, contact: contact)
+                draftLoaded = true
+            }
+        }
+        .onChange(of: draft) { _, new in
+            if draftLoaded { DraftStore.set(new, via: via, contact: contact) }
+        }
+    }
+
+    private func insertTemplate(_ t: String) {
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft = t
+        } else {
+            draft += (draft.hasSuffix(" ") ? "" : " ") + t
+        }
+    }
+
+    private func suggestReply() async {
+        suggesting = true; error = nil
+        defer { suggesting = false }
+        do {
+            draft = try await api.suggestThreadReply(via: via, contact: contact)
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func callContact() async {
@@ -92,6 +132,21 @@ struct ThreadView: View {
                     .font(.system(size: 24))
                     .foregroundStyle(Color.accentColor)
             }
+
+            Menu {
+                if templates.templates.isEmpty {
+                    Text("No quick replies yet — add some in Settings")
+                } else {
+                    ForEach(templates.templates, id: \.self) { t in
+                        Button(t) { insertTemplate(t) }
+                    }
+                }
+            } label: {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .disabled(sending)
 
             TextField("Text Message", text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -271,8 +326,15 @@ struct Bubble: View {
                 .foregroundStyle(.white)
                 .clipShape(BubbleShape(incoming: message.incoming))
 
-                Text(clockTime(message.ts))
-                    .font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    if !message.deliveryStatus.isEmpty {
+                        Text(message.deliveryStatus)
+                            .foregroundStyle(message.deliveryFailed ? Color.red : Color.secondary)
+                        Text("·").foregroundStyle(.secondary)
+                    }
+                    Text(clockTime(message.ts)).foregroundStyle(.secondary)
+                }
+                .font(.caption2)
             }
             if message.incoming { Spacer(minLength: 50) }
         }

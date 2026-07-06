@@ -4,11 +4,13 @@ import SwiftUI
 struct BulwarkSMSApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var settings = AppSettings()
+    @StateObject private var templates = TemplateStore()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(settings)
+                .environmentObject(templates)
                 .environmentObject(AppRouter.shared)
                 .preferredColorScheme(.dark)
                 .onAppear { PushManager.shared.configure(settings) }

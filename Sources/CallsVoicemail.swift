@@ -1,10 +1,12 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 // MARK: - Calls
 
 struct CallsView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var router: AppRouter
     @State private var calls: [CallRecord] = []
     @State private var error: String?
     @State private var loaded = false
@@ -23,7 +25,9 @@ struct CallsView: View {
                                            description: Text("Incoming calls will show up here."))
                 } else {
                     List(calls) { c in
-                        CallRow(c: c, onCall: { Task { await callBack(c) } })
+                        CallRow(c: c,
+                                onCall: { Task { await callBack(c) } },
+                                onMessage: { textBack(c) })
                     }
                     .listStyle(.plain)
                 }
@@ -47,6 +51,11 @@ struct CallsView: View {
         }
     }
 
+    private func textBack(_ c: CallRecord) {
+        router.open(ThreadTarget(via: c.via, contact: c.from,
+                                 title: c.from_display, subtitle: c.ext_label))
+    }
+
     private func load() async {
         do { calls = try await api.calls(); error = nil }
         catch { self.error = error.localizedDescription }
@@ -64,6 +73,7 @@ struct CallsView: View {
 struct CallRow: View {
     let c: CallRecord
     let onCall: () -> Void
+    let onMessage: () -> Void
 
     var body: some View {
         HStack(spacing: 13) {
@@ -82,17 +92,26 @@ struct CallRow: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(relativeTime(c.ts)).font(.caption).foregroundStyle(.secondary)
-                Button(action: onCall) {
-                    Image(systemName: "phone.arrow.up.right.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.green)
-                }
-                .buttonStyle(.plain)
+            Text(relativeTime(c.ts)).font(.caption).foregroundStyle(.secondary)
+            Button(action: onMessage) {
+                Image(systemName: "message.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Color.accentColor)
             }
+            .buttonStyle(.plain)
+            Button(action: onCall) {
+                Image(systemName: "phone.arrow.up.right.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.green)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
+        .contextMenu {
+            Button { UIPasteboard.general.string = c.from } label: {
+                Label("Copy Number", systemImage: "doc.on.doc")
+            }
+        }
     }
 }
 
@@ -130,11 +149,14 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 struct VoicemailView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var router: AppRouter
     @StateObject private var audio = AudioPlayer()
     @State private var vms: [Voicemail] = []
     @State private var loadingID: String?
     @State private var error: String?
     @State private var loaded = false
+    @State private var callAlert: String?
+    @State private var suggestingID: String?
 
     private var api: API { API(settings) }
 
@@ -152,7 +174,11 @@ struct VoicemailView: View {
                         VoicemailRow(vm: vm,
                                      isPlaying: audio.playingID == vm.id,
                                      isLoading: loadingID == vm.id,
-                                     onTap: { Task { await toggle(vm) } })
+                                     isSuggesting: suggestingID == vm.id,
+                                     onTap: { Task { await toggle(vm) } },
+                                     onMessage: { textBack(vm) },
+                                     onCall: { Task { await callBack(vm) } },
+                                     onSuggest: { Task { await suggestReply(vm) } })
                     }
                     .listStyle(.plain)
                 }
@@ -160,6 +186,37 @@ struct VoicemailView: View {
             .navigationTitle("Voicemail")
             .refreshable { await load() }
             .task { await load(); await poll() }
+            .alert("Connecting call", isPresented: Binding(
+                get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {
+                Button("OK", role: .cancel) { callAlert = nil }
+            } message: { Text(callAlert ?? "") }
+        }
+    }
+
+    private func textBack(_ vm: Voicemail) {
+        router.open(ThreadTarget(via: vm.viaNumber, contact: vm.from,
+                                 title: vm.from_display, subtitle: vm.ext_label))
+    }
+
+    private func suggestReply(_ vm: Voicemail) async {
+        suggestingID = vm.id
+        defer { suggestingID = nil }
+        do {
+            let text = try await api.suggestVoicemailReply(ext: vm.ext, msgid: vm.msgid)
+            DraftStore.set(text, via: vm.viaNumber, contact: vm.from)
+            router.open(ThreadTarget(via: vm.viaNumber, contact: vm.from,
+                                     title: vm.from_display, subtitle: vm.ext_label))
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func callBack(_ vm: Voicemail) async {
+        do {
+            try await api.call(from: vm.viaNumber, to: vm.from)
+            callAlert = "Your phone will ring in a moment — answer it, and you'll be connected to \(vm.from_display) showing your \(vm.ext_label) number."
+        } catch {
+            callAlert = "Couldn't start the call: \(error.localizedDescription)"
         }
     }
 
@@ -192,33 +249,82 @@ struct VoicemailRow: View {
     let vm: Voicemail
     let isPlaying: Bool
     let isLoading: Bool
+    let isSuggesting: Bool
     let onTap: () -> Void
+    let onMessage: () -> Void
+    let onCall: () -> Void
+    let onSuggest: () -> Void
 
     var body: some View {
-        HStack(spacing: 13) {
-            Button(action: onTap) {
-                ZStack {
-                    Circle().fill(Color.accentColor.opacity(0.15))
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
-                            .foregroundStyle(Color.accentColor)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 13) {
+                Button(action: onTap) {
+                    ZStack {
+                        Circle().fill(Color.accentColor.opacity(0.15))
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                                .foregroundStyle(Color.accentColor)
+                        }
                     }
+                    .frame(width: 44, height: 44)
                 }
-                .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .disabled(!vm.has_audio)
+                .buttonStyle(.plain)
+                .disabled(!vm.has_audio)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(vm.from_display).font(.body.weight(.semibold))
-                Text(vm.ext_label + (vm.duration > 0 ? "  ·  \(vm.duration)s" : ""))
-                    .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(vm.from_display).font(.body.weight(.semibold))
+                    Text(vm.ext_label + (vm.duration > 0 ? "  ·  \(vm.duration)s" : ""))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(relativeTime(vm.ts)).font(.caption).foregroundStyle(.secondary)
             }
-            Spacer()
-            Text(relativeTime(vm.ts)).font(.caption).foregroundStyle(.secondary)
+
+            if vm.isTranscribing {
+                Label("Transcribing…", systemImage: "waveform")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if !vm.transcriptText.isEmpty {
+                Text(vm.transcriptText)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 22) {
+                Button(action: onMessage) {
+                    Label("Text", systemImage: "message.fill").foregroundStyle(Color.accentColor)
+                }
+                Button(action: onCall) {
+                    Label("Call", systemImage: "phone.fill").foregroundStyle(.green)
+                }
+                if !vm.transcriptText.isEmpty {
+                    Button(action: onSuggest) {
+                        if isSuggesting {
+                            ProgressView()
+                        } else {
+                            Label("Suggest", systemImage: "sparkles").foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .disabled(isSuggesting)
+                }
+                Spacer()
+            }
+            .font(.subheadline.weight(.medium))
+            .buttonStyle(.plain)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+        .contextMenu {
+            Button { UIPasteboard.general.string = vm.from } label: {
+                Label("Copy Number", systemImage: "doc.on.doc")
+            }
+            if !vm.transcriptText.isEmpty {
+                Button { UIPasteboard.general.string = vm.transcriptText } label: {
+                    Label("Copy Transcript", systemImage: "doc.on.doc")
+                }
+            }
+        }
     }
 }

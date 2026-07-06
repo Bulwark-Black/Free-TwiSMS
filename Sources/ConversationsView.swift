@@ -143,6 +143,10 @@ struct ConversationRow: View {
         return String(digits.suffix(2))
     }
 
+    private var draft: String {
+        DraftStore.get(via: c.via, contact: c.contact)
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -164,9 +168,15 @@ struct ConversationRow: View {
                         .background(Color.accentColor.opacity(0.18))
                         .foregroundStyle(Color.accentColor)
                         .clipShape(RoundedRectangle(cornerRadius: 5))
-                    Text((c.last_dir == "out" ? "You: " : "") + c.last_body)
-                        .font(.subheadline).foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    if draft.isEmpty {
+                        Text((c.last_dir == "out" ? "You: " : "") + c.last_body)
+                            .font(.subheadline).foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        (Text("Draft: ").font(.subheadline.weight(.semibold)).foregroundStyle(.red)
+                            + Text(draft).font(.subheadline).foregroundStyle(.secondary))
+                            .lineLimit(1)
+                    }
                 }
             }
         }

@@ -33,8 +33,12 @@ struct Message: Codable, Identifiable, Hashable {
     let body: String
     let dir: String
     let media: [Media]
+    let status: String?
+    let failed: Bool?
     var id: String { "\(ts)-\(dir)-\(body.hashValue)-\(media.count)" }
     var incoming: Bool { dir == "in" }
+    var deliveryStatus: String { incoming ? "" : (status ?? "") }
+    var deliveryFailed: Bool { !incoming && (failed ?? false) }
 }
 
 struct CallRecord: Codable, Identifiable {
@@ -54,16 +58,23 @@ struct Voicemail: Codable, Identifiable {
     let ext: String
     let ext_label: String
     let msgid: String
+    let via: String?
     let from: String
     let from_display: String
     let callerid: String
     let ts: Double
     let duration: Int
     let has_audio: Bool
+    let transcript: String?
+    let transcript_status: String?
     enum CodingKeys: String, CodingKey {
-        case ext, ext_label, msgid = "id", from, from_display, callerid, ts, duration, has_audio
+        case ext, ext_label, msgid = "id", via, from, from_display, callerid, ts, duration,
+             has_audio, transcript, transcript_status
     }
     var id: String { ext + "-" + msgid }
+    var viaNumber: String { via ?? "" }
+    var transcriptText: String { (transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+    var isTranscribing: Bool { transcriptText.isEmpty && (transcript_status ?? "pending") != "done" }
 }
 
 // MARK: - Helpers
@@ -229,5 +240,23 @@ final class API {
 
     func call(from: String, to: String) async throws {
         _ = try await data("/api/call", method: "POST", json: ["from": from, "to": to])
+    }
+
+    private func suggestion(from body: Data) throws -> String {
+        guard let obj = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let s = obj["suggestion"] as? String, !s.isEmpty else {
+            throw APIError(message: "No suggestion returned")
+        }
+        return s
+    }
+
+    func suggestThreadReply(via: String, contact: String) async throws -> String {
+        try suggestion(from: try await data("/api/suggest-reply", method: "POST",
+                                            json: ["via": via, "with": contact]))
+    }
+
+    func suggestVoicemailReply(ext: String, msgid: String) async throws -> String {
+        try suggestion(from: try await data("/api/suggest-vm", method: "POST",
+                                            json: ["ext": ext, "msgid": msgid]))
     }
 }

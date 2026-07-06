@@ -26,6 +26,15 @@ struct SettingsView: View {
                     .autocorrectionDisabled()
                 SecureField("Password", text: $password)
             }
+            if !firstRun {
+                Section("Messaging") {
+                    NavigationLink {
+                        TemplatesEditor()
+                    } label: {
+                        Label("Quick Replies", systemImage: "bolt")
+                    }
+                }
+            }
             if let result {
                 Section {
                     Label(result, systemImage: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
