@@ -1,7 +1,100 @@
 import SwiftUI
+import ContactsUI
 
 // Wrapper so a phone number can drive a `.sheet(item:)`.
 struct PhoneID: Identifiable { let id: String }
+
+// Chooser used by the Dial screen: saved (Yealink-synced) contacts first, plus a button
+// to fall through to the iPhone address book. Returns a phone number.
+struct ContactChooser: View {
+    @EnvironmentObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+    var onPick: (String) -> Void
+
+    @State private var contacts: [Contact] = []
+    @State private var query = ""
+    @State private var showPhonePicker = false
+
+    private var api: API { API(settings) }
+    private var filtered: [Contact] {
+        query.isEmpty ? contacts
+            : contacts.filter { $0.name.localizedCaseInsensitiveContains(query)
+                                || $0.display.contains(query) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button { showPhonePicker = true } label: {
+                        Label("From iPhone Contacts", systemImage: "person.crop.circle")
+                    }
+                }
+                Section("Saved contacts") {
+                    if contacts.isEmpty {
+                        Text("No saved contacts yet").foregroundStyle(.secondary)
+                    }
+                    ForEach(filtered) { c in
+                        Button { dismiss(); onPick(c.phone) } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(c.name).foregroundStyle(.primary)
+                                Text(c.display).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $query)
+            .navigationTitle("Choose Contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } } }
+            .task { contacts = (try? await api.contacts()) ?? [] }
+            .sheet(isPresented: $showPhonePicker) {
+                NamedContactPicker { _, phone in
+                    showPhonePicker = false
+                    if !phone.isEmpty { dismiss(); onPick(phone) }
+                }
+            }
+        }
+    }
+}
+
+// System contact picker that returns the name too (DialView's ContactPicker returns only the number).
+// Runs out-of-process, so it needs no Contacts permission.
+struct NamedContactPicker: UIViewControllerRepresentable {
+    var onPick: (_ name: String, _ phone: String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+
+    func makeUIViewController(context: Context) -> CNContactPickerViewController {
+        let vc = CNContactPickerViewController()
+        vc.displayedPropertyKeys = [CNContactPhoneNumbersKey]   // show numbers to pick
+        vc.delegate = context.coordinator
+        return vc
+    }
+
+    func updateUIViewController(_ vc: CNContactPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, CNContactPickerDelegate {
+        let onPick: (String, String) -> Void
+        init(onPick: @escaping (String, String) -> Void) { self.onPick = onPick }
+
+        private func fullName(_ c: CNContact) -> String {
+            CNContactFormatter.string(from: c, style: .fullName) ?? ""
+        }
+
+        // User drilled in and tapped a specific phone number.
+        func contactPicker(_ picker: CNContactPickerViewController, didSelect property: CNContactProperty) {
+            let phone = (property.value as? CNPhoneNumber)?.stringValue ?? ""
+            onPick(fullName(property.contact), phone)
+        }
+
+        // User tapped a contact (single number) directly.
+        func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
+            onPick(fullName(contact), contact.phoneNumbers.first?.value.stringValue ?? "")
+        }
+    }
+}
 
 // Sheet to name a number (or add a new contact). Saving syncs to the desk phone.
 struct NameContactSheet: View {
@@ -81,14 +174,18 @@ struct NameContactSheet: View {
     }
 }
 
-// Contacts tab: browse, add, edit, delete. Everything here syncs to the Yealink.
+// Contacts tab: browse, add, edit, delete, call/text. Everything here syncs to the Yealink.
 struct ContactsView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var router: AppRouter
     @State private var contacts: [Contact] = []
     @State private var error: String?
     @State private var loaded = false
     @State private var showAdd = false
+    @State private var showPicker = false
     @State private var editing: Contact?
+    @State private var acting: Contact?
+    @State private var callAlert: String?
 
     private var api: API { API(settings) }
 
@@ -104,14 +201,23 @@ struct ContactsView: View {
                 } else {
                     List {
                         ForEach(contacts) { c in
-                            Button { editing = c } label: {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(c.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                                    Text(c.display).font(.caption).foregroundStyle(.secondary)
+                            Button { acting = c } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(c.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                                        Text(c.display).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "phone.fill").foregroundStyle(.green)
                                 }
                             }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    Task { try? await api.saveContact(phone: c.phone, name: ""); await load() }
+                                } label: { Label("Delete", systemImage: "trash") }
+                                Button { editing = c } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
+                            }
                         }
-                        .onDelete { offsets in Task { await remove(offsets) } }
                     }
                     .listStyle(.plain)
                 }
@@ -119,7 +225,14 @@ struct ContactsView: View {
             .navigationTitle("Contacts")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showAdd = true } label: { Image(systemName: "plus") }
+                    Menu {
+                        Button { showPicker = true } label: {
+                            Label("From iPhone Contacts", systemImage: "person.crop.circle")
+                        }
+                        Button { showAdd = true } label: {
+                            Label("Enter Manually", systemImage: "square.and.pencil")
+                        }
+                    } label: { Image(systemName: "plus") }
                 }
             }
             .refreshable { await load() }
@@ -127,9 +240,26 @@ struct ContactsView: View {
             .sheet(isPresented: $showAdd) {
                 NameContactSheet(existingPhone: nil) { Task { await load() } }
             }
+            .sheet(isPresented: $showPicker) {
+                NamedContactPicker { name, phone in
+                    showPicker = false
+                    guard !phone.isEmpty else { return }
+                    Task { try? await api.saveContact(phone: phone, name: name); await load() }
+                }
+            }
             .sheet(item: $editing) { c in
                 NameContactSheet(existingPhone: c.phone) { Task { await load() } }
             }
+            .sheet(item: $acting) { c in
+                ContactActionSheet(contact: c,
+                    onCall: { n in Task { await placeCall(from: n, to: c) } },
+                    onText: { n in router.open(ThreadTarget(via: n.number, contact: c.phone,
+                                                            title: c.name, subtitle: n.label)) })
+            }
+            .alert("Connecting call", isPresented: Binding(
+                get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {
+                Button("OK", role: .cancel) { callAlert = nil }
+            } message: { Text(callAlert ?? "") }
         }
     }
 
@@ -139,10 +269,67 @@ struct ContactsView: View {
         loaded = true
     }
 
-    private func remove(_ offsets: IndexSet) async {
-        for i in offsets {
-            try? await api.saveContact(phone: contacts[i].phone, name: "")
+    private func placeCall(from n: OurNumber, to c: Contact) async {
+        do {
+            try await api.call(from: n.number, to: c.phone)
+            callAlert = "Your phone will ring in a moment — answer it, and you'll be connected to \(c.name), showing your \(n.label) number."
+        } catch {
+            callAlert = "Couldn't start the call: \(error.localizedDescription)"
         }
-        await load()
+    }
+}
+
+// Pick which business line to call/text a saved contact from.
+struct ContactActionSheet: View {
+    @EnvironmentObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+    let contact: Contact
+    var onCall: (OurNumber) -> Void
+    var onText: (OurNumber) -> Void
+
+    @State private var numbers: [OurNumber] = []
+    @State private var from = ""
+
+    private var api: API { API(settings) }
+    private var selected: OurNumber? { numbers.first(where: { $0.number == from }) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(contact.name).font(.headline)
+                    Text(contact.display).foregroundStyle(.secondary)
+                }
+                Section("Use my number") {
+                    if numbers.isEmpty {
+                        ProgressView()
+                    } else {
+                        Picker("Number", selection: $from) {
+                            ForEach(numbers) { n in Text("\(n.label)  ·  \(n.display)").tag(n.number) }
+                        }
+                        .pickerStyle(.inline).labelsHidden()
+                    }
+                }
+                Section {
+                    Button {
+                        if let n = selected { dismiss(); onCall(n) }
+                    } label: { Label("Call", systemImage: "phone.fill") }
+                        .disabled(selected == nil)
+                    Button {
+                        if let n = selected { dismiss(); onText(n) }
+                    } label: { Label("Text", systemImage: "message.fill") }
+                        .disabled(selected == nil)
+                }
+            }
+            .navigationTitle("Contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } } }
+            .task {
+                if numbers.isEmpty, let ns = try? await api.numbers() {
+                    numbers = ns
+                    if from.isEmpty { from = ns.first?.number ?? "" }
+                }
+            }
+        }
     }
 }

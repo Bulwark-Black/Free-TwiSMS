@@ -57,13 +57,10 @@ struct DialView: View {
             .navigationTitle("Dial")
             .task { await loadNumbers() }
             .sheet(isPresented: $showContacts) {
-                ContactPicker { number in
+                ContactChooser { number in
                     showContacts = false
                     Task { await placeCall(to: number) }
-                } onCancel: {
-                    showContacts = false
                 }
-                .ignoresSafeArea()
             }
             .alert("Connecting call", isPresented: Binding(
                 get: { callAlert != nil }, set: { if !$0 { callAlert = nil } })) {
@@ -94,38 +91,5 @@ struct DialView: View {
     }
 }
 
-// System contact picker (runs out-of-process — no Contacts permission needed).
-struct ContactPicker: UIViewControllerRepresentable {
-    let onPick: (String) -> Void
-    let onCancel: () -> Void
-
-    func makeUIViewController(context: Context) -> CNContactPickerViewController {
-        let p = CNContactPickerViewController()
-        p.delegate = context.coordinator
-        p.displayedPropertyKeys = [CNContactPhoneNumbersKey]
-        return p
-    }
-
-    func updateUIViewController(_ c: CNContactPickerViewController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick, onCancel: onCancel) }
-
-    final class Coordinator: NSObject, CNContactPickerDelegate {
-        let onPick: (String) -> Void
-        let onCancel: () -> Void
-        init(onPick: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
-            self.onPick = onPick; self.onCancel = onCancel
-        }
-        // User tapped a specific phone number row.
-        func contactPicker(_ picker: CNContactPickerViewController, didSelect property: CNContactProperty) {
-            if let num = (property.value as? CNPhoneNumber)?.stringValue { onPick(num) }
-            else { onCancel() }
-        }
-        // User tapped a whole contact (single-number contacts).
-        func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
-            if let num = contact.phoneNumbers.first?.value.stringValue { onPick(num) }
-            else { onCancel() }
-        }
-        func contactPickerDidCancel(_ picker: CNContactPickerViewController) { onCancel() }
-    }
-}
+// The contact picker now lives in Contacts.swift as NamedContactPicker (returns name + number);
+// the Dial screen uses ContactChooser (saved contacts + iPhone contacts).
