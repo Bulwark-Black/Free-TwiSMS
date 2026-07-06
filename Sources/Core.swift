@@ -37,6 +37,10 @@ struct Message: Codable, Identifiable, Hashable {
     let media: [Media]
     let status: String?
     let failed: Bool?
+    let mid: Int?
+    enum CodingKeys: String, CodingKey {
+        case ts, body, dir, media, status, failed, mid = "id"
+    }
     var id: String { "\(ts)-\(dir)-\(body.hashValue)-\(media.count)" }
     var incoming: Bool { dir == "in" }
     var deliveryStatus: String { incoming ? "" : (status ?? "") }
@@ -54,6 +58,7 @@ struct CallRecord: Codable, Identifiable {
     let disposition: String
     let missed: Bool
     let duration: Int
+    let uniqueid: String?
     var id: String { "\(ts)-\(from)-\(ext)" }
     var displayName: String { (contact_name?.isEmpty == false) ? contact_name! : from_display }
 }
@@ -253,6 +258,22 @@ final class API {
 
     func saveContact(phone: String, name: String) async throws {
         _ = try await data("/api/contact", method: "POST", json: ["phone": phone, "name": name])
+    }
+
+    func deleteThread(via: String, contact: String) async throws {
+        _ = try await data("/api/thread-delete", method: "POST", json: ["via": via, "with": contact])
+    }
+
+    func deleteMessage(id: Int) async throws {
+        _ = try await data("/api/message-delete", method: "POST", json: ["id": id])
+    }
+
+    func deleteCall(uniqueid: String) async throws {
+        _ = try await data("/api/call-delete", method: "POST", json: ["uniqueid": uniqueid])
+    }
+
+    func deleteVoicemail(ext: String, msgid: String) async throws {
+        _ = try await data("/api/voicemail-delete", method: "POST", json: ["ext": ext, "msgid": msgid])
     }
 
     func voicemailAudio(ext: String, msgid: String) async throws -> Data {

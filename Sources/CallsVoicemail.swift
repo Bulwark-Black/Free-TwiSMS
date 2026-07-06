@@ -25,11 +25,18 @@ struct CallsView: View {
                     ContentUnavailableView("No Calls", systemImage: "phone",
                                            description: Text("Incoming calls will show up here."))
                 } else {
-                    List(calls) { c in
-                        CallRow(c: c,
-                                onCall: { Task { await callBack(c) } },
-                                onMessage: { textBack(c) },
-                                onSaveContact: { naming = PhoneID(id: c.from) })
+                    List {
+                        ForEach(calls) { c in
+                            CallRow(c: c,
+                                    onCall: { Task { await callBack(c) } },
+                                    onMessage: { textBack(c) },
+                                    onSaveContact: { naming = PhoneID(id: c.from) })
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    Task { if let uid = c.uniqueid { try? await api.deleteCall(uniqueid: uid) }; await load() }
+                                } label: { Label("Delete", systemImage: "trash") }
+                            }
+                        }
                     }
                     .listStyle(.plain)
                 }
@@ -177,16 +184,27 @@ struct VoicemailView: View {
                     ContentUnavailableView("No Voicemail", systemImage: "recordingtape",
                                            description: Text("Voicemails people leave will appear here."))
                 } else {
-                    List(vms) { vm in
-                        VoicemailRow(vm: vm,
-                                     isPlaying: audio.playingID == vm.id,
-                                     isLoading: loadingID == vm.id,
-                                     isSuggesting: suggestingID == vm.id,
-                                     onTap: { Task { await toggle(vm) } },
-                                     onMessage: { textBack(vm) },
-                                     onCall: { Task { await callBack(vm) } },
-                                     onSuggest: { Task { await suggestReply(vm) } },
-                                     onSaveContact: { naming = PhoneID(id: vm.from) })
+                    List {
+                        ForEach(vms) { vm in
+                            VoicemailRow(vm: vm,
+                                         isPlaying: audio.playingID == vm.id,
+                                         isLoading: loadingID == vm.id,
+                                         isSuggesting: suggestingID == vm.id,
+                                         onTap: { Task { await toggle(vm) } },
+                                         onMessage: { textBack(vm) },
+                                         onCall: { Task { await callBack(vm) } },
+                                         onSuggest: { Task { await suggestReply(vm) } },
+                                         onSaveContact: { naming = PhoneID(id: vm.from) })
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    Task {
+                                        if audio.playingID == vm.id { audio.stop() }
+                                        try? await api.deleteVoicemail(ext: vm.ext, msgid: vm.msgid)
+                                        await load()
+                                    }
+                                } label: { Label("Delete", systemImage: "trash") }
+                            }
+                        }
                     }
                     .listStyle(.plain)
                 }

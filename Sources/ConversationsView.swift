@@ -40,6 +40,11 @@ struct ConversationsView: View {
                                                                title: c.displayName, subtitle: c.via_label)) {
                                 ConversationRow(c: c)
                             }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    Task { try? await api.deleteThread(via: c.via, contact: c.contact); await load() }
+                                } label: { Label("Delete", systemImage: "trash") }
+                            }
                         }
                     }
                     .listStyle(.plain)

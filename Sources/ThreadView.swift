@@ -33,6 +33,13 @@ struct ThreadView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(messages) { m in
                             Bubble(message: m).id(m.id)
+                                .contextMenu {
+                                    if let mid = m.mid {
+                                        Button(role: .destructive) {
+                                            Task { try? await api.deleteMessage(id: mid); await load() }
+                                        } label: { Label("Delete Message", systemImage: "trash") }
+                                    }
+                                }
                         }
                     }
                     .padding(.horizontal, 12)
